@@ -3,39 +3,52 @@ import os
 import time
 from glob import glob
 
-# Step 1: Capture image
+# Step 1: Open webcam and capture live video frames, run detection on each frame
 cap = cv2.VideoCapture(0)
 print("📸 Opening webcam...")
-time.sleep(2)
-ret, frame = cap.read()
 
-if ret:
-    img_path = "live_capture.jpg"
-    cv2.imwrite(img_path, frame)
-    print("✅ Image saved as", img_path)
-else:
-    print("❌ Failed to capture image")
+if not cap.isOpened():
+    print("❌ Cannot open webcam")
+    exit()
 
-cap.release()
-cv2.destroyAllWindows()
+print("🔍 Running YOLOv5 detection on live video...")
+try:
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            print("❌ Failed to grab frame")
+            break
 
-# Step 2: Run YOLOv5 detection
-print("🔍 Running YOLOv5 detection...")
-os.system(f"python detect.py --weights yolov5s.pt --img 640 --conf 0.25 --source {img_path}")
+        # Save frame temporarily for detection input
+        tmp_img_path = "tmp_live.jpg"
+        cv2.imwrite(tmp_img_path, frame)
 
-# Step 3: Locate the latest 'exp*' folder inside runs/detect
-exp_folders = sorted(glob("runs/detect/exp*"), key=os.path.getmtime, reverse=True)
-if exp_folders:
-    latest_folder = exp_folders[0]
-    result_path = os.path.join(latest_folder, "live_capture.jpg")
+        # Run YOLOv5 detect.py on the current frame image
+        # This will create/overwrite folders in runs/detect/exp* with results
+        os.system(f"python detect.py --weights yolov5s.pt --img 640 --conf 0.25 --source {tmp_img_path} --hide-labels --hide-conf --save-txt --save-conf")
 
-    if os.path.exists(result_path):
-        img = cv2.imread(result_path)
-        cv2.imshow("🧠 Detected Image", img)
-        print(f"🖼️ Showing result from: {result_path}")
-        cv2.waitKey(0)
-        cv2.destroyAllWindows()
-    else:
-        print(f"❌ Image not found in {latest_folder}")
-else:
-    print("❌ No detection folders found.")
+        # Find latest exp folder created by YOLOv5 detection
+        exp_folders = sorted(glob("runs/detect/exp*"), key=os.path.getmtime, reverse=True)
+        if exp_folders:
+            latest_folder = exp_folders[0]
+            result_img_path = os.path.join(latest_folder, "tmp_live.jpg")  # detected image saved with same name
+
+            if os.path.exists(result_img_path):
+                detected_img = cv2.imread(result_img_path)
+                cv2.imshow("🧠 YOLOv5 Detection (Press 'q' to quit)", detected_img)
+            else:
+                print(f"❌ Detected image not found in {latest_folder}")
+                cv2.imshow("Webcam", frame)
+        else:
+            print("❌ No detection folders found.")
+            cv2.imshow("Webcam", frame)
+
+        # Press 'q' to quit
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+finally:
+    cap.release()
+    cv2.destroyAllWindows()
+    # Clean up temp image if exists
+    if os.path.exists("tmp_live.jpg"):
+        os.remove("tmp_live.jpg")
